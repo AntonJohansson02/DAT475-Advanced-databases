@@ -1,5 +1,5 @@
 import pandas as pd
-from rdflib import Graph, Literal, RDF, URIRef, Namespace
+from rdflib import Graph, Literal, RDF, Namespace
 from rdflib.namespace import XSD
 
 def setup_graph():
@@ -10,15 +10,11 @@ def setup_graph():
     return g, ns
 
 def process_course_data(g, ns):
-    """Process course instance and planning data"""
-    # Load CSV files
     instances_df = pd.read_csv("Course_Instances.csv")
     planning_df = pd.read_csv("Course_plannings.csv")
     
-    # Merge the DataFrames
     merged_df = pd.merge(instances_df, planning_df, left_on="Instance_id", right_on="Course", how="inner")
     
-    # Iterate through the merged DataFrame and add RDF triples
     for _, row in merged_df.iterrows():
         ci_uri = ns[f"courseInstance_{row['Instance_id']}"]
         g.add((ci_uri, RDF.type, ns.CourseInstance))
@@ -44,11 +40,8 @@ def process_course_data(g, ns):
     return g
 
 def process_student_data(g, ns):
-    """Process student data from Students.csv"""
-    # Load the CSV file
     students_df = pd.read_csv("Students.csv")
     
-    # Iterate through the DataFrame and add RDF triples
     for _, row in students_df.iterrows():
         # Create student URI
         student_uri = ns[f"person_{row['Student id']}"]
@@ -77,11 +70,8 @@ def process_student_data(g, ns):
     return g
 
 def process_teacher_data(g, ns):
-    """Process senior teacher data from Senior_Teachers.csv"""
-    # Load the CSV file
     teachers_df = pd.read_csv("Senior_Teachers.csv")
     
-    # Iterate through the DataFrame and add RDF triples
     for _, row in teachers_df.iterrows():
         # Create teacher URI
         teacher_uri = ns[f"teacher_{row['Teacher id']}"]
@@ -110,11 +100,8 @@ def process_teacher_data(g, ns):
     return g
 
 def process_ta_data(g, ns):
-    """Process teaching assistant data from Teaching_Assistants.csv"""
-    # Load the CSV file
     ta_df = pd.read_csv("Teaching_Assistants.csv")
     
-    # Iterate through the DataFrame and add RDF triples
     for _, row in ta_df.iterrows():
         # Create TA URI
         ta_uri = ns[f"ta_{row['Teacher id']}"]
@@ -143,11 +130,8 @@ def process_ta_data(g, ns):
     return g
 
 def process_reported_hours(g, ns):
-    """Process teaching hours from Reported_Hours.csv"""
-    # Load the CSV file
     hours_df = pd.read_csv("Reported_Hours.csv")
     
-    # Iterate through the DataFrame and add RDF triples
     for _, row in hours_df.iterrows():
         # Get course and teacher URIs
         course_uri = ns[f"course_{row['Course code']}"]
@@ -174,12 +158,48 @@ def process_reported_hours(g, ns):
     
     return g
 
+def process_assigned_hours(g, ns):
+    assigned_df = pd.read_csv("Assigned_Hours.csv")
+    
+    for _, row in assigned_df.iterrows():
+        # Get URIs for course, course instance, and teacher
+        course_uri = ns[f"course_{row['Course code']}"]
+        course_instance_uri = ns[f"courseInstance_{row['Course Instance']}"]
+        
+        # Determine if it's a senior teacher based on ID format
+        teacher_id = row['Teacher Id']
+        if len(teacher_id) > 10:  # Personal number format for senior teachers
+            teacher_uri = ns[f"teacher_{teacher_id}"]
+            g.add((teacher_uri, RDF.type, ns.SeniorTeacher))
+        else:
+            teacher_uri = ns[f"ta_{teacher_id}"]
+            g.add((teacher_uri, RDF.type, ns.TeachingAssistant))
+        
+        # Create a teaching assignment relationship
+        assignment_uri = ns[f"teaching_assignment_{row['Course Instance']}_{teacher_id}"]
+        g.add((assignment_uri, RDF.type, ns.TeachingAssignment))
+        
+        # Link to teacher, course, and course instance
+        g.add((assignment_uri, ns.hasTeacher, teacher_uri))
+        g.add((assignment_uri, ns.hasCourse, course_uri))
+        g.add((assignment_uri, ns.hasCourseInstance, course_instance_uri))
+        
+        # Add assigned hours
+        g.add((assignment_uri, ns.assignedHours, Literal(float(row['Hours']), datatype=XSD.float)))
+        
+        # Add study period and academic year
+        g.add((assignment_uri, ns.studyPeriod, Literal(float(row['Study Period']), datatype=XSD.float)))
+        g.add((assignment_uri, ns.academicYear, Literal(row['Academic Year'], datatype=XSD.string)))
+        
+        # Add direct links for easier querying
+        g.add((teacher_uri, ns.assignedToCourse, course_instance_uri))
+        g.add((course_instance_uri, ns.hasTeacherAssignment, assignment_uri))
+    
+    return g
+
 def process_registrations(g, ns):
-    """Process student registrations from Registrations.csv"""
-    # Load the CSV file
     reg_df = pd.read_csv("Registrations.csv")
     
-    # Iterate through the DataFrame and add RDF triples
     for _, row in reg_df.iterrows():
         # Get course instance and student URIs
         course_instance_uri = ns[f"courseInstance_{row['Course Instance']}"]
@@ -207,11 +227,8 @@ def process_registrations(g, ns):
     return g
 
 def process_programmes(g, ns):
-    """Process programme data from Programmes.csv"""
-    # Load the CSV file
     prog_df = pd.read_csv("Programmes.csv")
     
-    # Iterate through the DataFrame and add RDF triples
     for _, row in prog_df.iterrows():
         # Create programme URI
         programme_uri = ns[f"program_{row['Programme code']}"]
@@ -236,11 +253,9 @@ def process_programmes(g, ns):
     return g
 
 def process_programme_courses(g, ns):
-    """Process programme course data from Programme_Courses.csv"""
-    # Load the CSV file
+
     prog_courses_df = pd.read_csv("Programme_Courses.csv")
     
-    # Iterate through the DataFrame and add RDF triples
     for _, row in prog_courses_df.iterrows():
         # Get URIs for the program and course
         program_uri = ns[f"program_{row['Programme code']}"]
@@ -274,23 +289,62 @@ def process_programme_courses(g, ns):
     
     return g
 
-def main():
-    # Set up graph
-    g, ns = setup_graph()
+def process_courses(g, ns):
+    courses_df = pd.read_csv("Courses.csv")
     
-    # Process different data sources
+    for _, row in courses_df.iterrows():
+        # Create course URI
+        course_uri = ns[f"course_{row['Course code']}"]
+        
+        # Add course properties
+        g.add((course_uri, RDF.type, ns.Course))
+        g.add((course_uri, ns.courseName, Literal(row['Course name'], datatype=XSD.string)))
+        g.add((course_uri, ns.courseCode, Literal(str(row['Course code']), datatype=XSD.string)))
+        g.add((course_uri, ns.credits, Literal(float(row['Credits']), datatype=XSD.float)))
+        g.add((course_uri, ns.level, Literal(row['Level'], datatype=XSD.string)))
+        
+        # Add department information
+        dept_uri = ns[f"department_{row['Department']}"]
+        g.add((dept_uri, RDF.type, ns.Department))
+        g.add((dept_uri, ns.departmentCode, Literal(row['Department'], datatype=XSD.string)))
+        g.add((course_uri, ns.belongsToDepartment, dept_uri))
+        
+        # Add division information
+        division_uri = ns[f"division_{row['Division']}"]
+        g.add((division_uri, RDF.type, ns.Division))
+        g.add((division_uri, ns.divisionCode, Literal(row['Division'], datatype=XSD.string)))
+        g.add((course_uri, ns.belongsToDivision, division_uri))
+        
+        # Link division to department
+        g.add((division_uri, ns.partOfDepartment, dept_uri))
+        
+        # Add program ownership
+        program_uri = ns[f"program_{row['Owned By']}"]
+        g.add((program_uri, RDF.type, ns.Program))
+        g.add((program_uri, ns.programCode, Literal(row['Owned By'], datatype=XSD.string)))
+        g.add((program_uri, ns.ownerOf, course_uri))
+        g.add((course_uri, ns.ownedBy, program_uri))
+    
+    return g
+
+def main():
+    g, ns = setup_graph() # setup 
+    
+    #process each data file
     g = process_course_data(g, ns)
     g = process_student_data(g, ns)
     g = process_teacher_data(g, ns)
     g = process_ta_data(g, ns)
     g = process_reported_hours(g, ns)
+    g = process_assigned_hours(g, ns)
     g = process_registrations(g, ns)
     g = process_programmes(g, ns)
     g = process_programme_courses(g, ns)
+    g = process_courses(g, ns)
     
-    # Serialize the graph
+    # serialize the graph
     g.serialize(destination="combined_data.ttl", format="turtle")
-    print("combined_data.ttl has been created!")
+    print("combined_data.ttl has been created:)")
 
 if __name__ == "__main__":
     main()
