@@ -3,7 +3,6 @@ from rdflib import Graph, Literal, RDF, Namespace
 from rdflib.namespace import XSD
 
 def setup_graph():
-    """Set up the RDF graph and namespace"""
     g = Graph()
     ns = Namespace("http://www.semanticweb.org/anton/ontologies/2025/3/Assignment2/")
     g.parse("Assignment2.ttl", format="turtle")
